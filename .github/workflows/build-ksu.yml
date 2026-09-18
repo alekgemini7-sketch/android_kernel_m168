@@ -30,7 +30,10 @@ jobs:
             python3 \
             rsync \
             unzip \
-            zip
+            zip \
+            clang \
+            llvm \
+            lld
 
       - name: Clone KernelSU v3.3.0-30
         shell: bash
@@ -41,47 +44,45 @@ jobs:
             https://github.com/backslashxx/KernelSU.git \
             /tmp/KernelSU
 
+          echo "KernelSU version:"
+          git -C /tmp/KernelSU describe --tags --always
+
       - name: Replace KernelSU source
         shell: bash
         run: |
           rm -rf KernelSU
           cp -a /tmp/KernelSU KernelSU
 
-      - name: Check KernelSU
+          echo "KernelSU directory:"
+          ls -lah KernelSU
+
+      - name: Setup LLVM
         shell: bash
         run: |
-          echo "KernelSU:"
-          git -C KernelSU describe --tags --always || true
-          find KernelSU -maxdepth 2 -type f | head -50
+          clang --version
+          ld.lld --version
+          llvm-ar --version
 
-      - name: Setup ARM64 GCC 4.9
+      - name: Prepare build directory
         shell: bash
         run: |
-          git clone \
-            --depth=1 \
-            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
-            "$GITHUB_WORKSPACE/toolchain"
-
-          echo "Toolchain:"
-          ls -lah "$GITHUB_WORKSPACE/toolchain/bin"
-
-          test -x "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-gcc"
-          test -x "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-ld"
-
-      - name: Configure kernel
-        shell: bash
-        run: |
+          rm -rf out
           mkdir -p out
 
+      - name: Configure A03 Core
+        shell: bash
+        run: |
           make \
             O=out \
             ARCH=arm64 \
             a3core_eur_open_defconfig
 
-      - name: Show configuration
+      - name: Check KernelSU configuration
         shell: bash
         run: |
-          grep -E 'CONFIG_KSU|CONFIG_KPROBES|CONFIG_OVERLAY_FS' \
+          echo "=== KernelSU config ==="
+          grep -E \
+            'CONFIG_KSU|CONFIG_KPROBES|CONFIG_OVERLAY_FS' \
             out/.config || true
 
       - name: Build kernel
@@ -89,34 +90,51 @@ jobs:
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
-          export CROSS_COMPILE="$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-"
 
-          echo "Compiler:"
-          "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-gcc" --version
+          echo "=== Compiler ==="
+          clang --version
 
-          echo "Building kernel..."
+          echo "=== Building kernel ==="
 
           make \
             O=out \
             ARCH=arm64 \
-            CROSS_COMPILE="$CROSS_COMPILE" \
+            CC=clang \
+            LLVM=1 \
+            LLVM_IAS=1 \
             -j"$(nproc)"
+
+      - name: Verify kernel
+        shell: bash
+        run: |
+          echo "=== Kernel output ==="
+
+          ls -lah out/arch/arm64/boot/
+
+          if [ -f out/arch/arm64/boot/Image ]; then
+            echo "Image found!"
+            file out/arch/arm64/boot/Image
+          else
+            echo "ERROR: Image not found"
+            exit 1
+          fi
 
       - name: Collect kernel
         shell: bash
         run: |
           mkdir -p artifacts
 
-          if [ -f out/arch/arm64/boot/Image ]; then
-            cp out/arch/arm64/boot/Image artifacts/
-          fi
+          cp out/arch/arm64/boot/Image \
+            artifacts/Image
 
           if [ -f out/arch/arm64/boot/Image.gz ]; then
-            cp out/arch/arm64/boot/Image.gz artifacts/
+            cp out/arch/arm64/boot/Image.gz \
+              artifacts/Image.gz
           fi
 
           if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
-            cp out/arch/arm64/boot/Image.gz-dtb artifacts/
+            cp out/arch/arm64/boot/Image.gz-dtb \
+              artifacts/Image.gz-dtb
           fi
 
           if [ -d out/arch/arm64/boot/dts ]; then
@@ -126,13 +144,15 @@ jobs:
               -exec cp {} artifacts/ \;
           fi
 
-          cp out/.config artifacts/kernel.config
+          cp out/.config \
+            artifacts/kernel.config
 
-          echo "=== ARTIFACTS ==="
+          echo "=== Final artifacts ==="
           ls -lah artifacts
 
-      - name: Upload kernel
+      - name: Upload kernel artifact
         uses: actions/upload-artifact@v4
         with:
           name: A032F-KSU-3.3.0-30
           path: artifacts/
+          if-no-files-found: error
