@@ -1,0 +1,95 @@
+name: Build A03 Core KSU 3.3.0-30
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout kernel
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y \
+            bc \
+            bison \
+            build-essential \
+            flex \
+            git \
+            libssl-dev \
+            libelf-dev \
+            lz4 \
+            cpio \
+            python3 \
+            rsync \
+            unzip \
+            zip
+
+      - name: Clone KernelSU v3.3.0-30
+        run: |
+          git clone --depth=1 \
+            --branch v3.3.0-30 \
+            https://github.com/backslashxx/KernelSU.git \
+            /tmp/KernelSU
+
+      - name: Replace KernelSU source
+        run: |
+          rm -rf KernelSU
+          cp -a /tmp/KernelSU KernelSU
+
+      - name: Check KernelSU
+        run: |
+          git -C KernelSU describe --tags --always || true
+          find KernelSU -maxdepth 2 -type f | head -50
+
+      - name: Prepare config
+        run: |
+          mkdir -p out
+          make O=out ARCH=arm64 a3core_eur_open_defconfig
+
+      - name: Show KSU config
+        run: |
+          grep -E 'CONFIG_KSU|CONFIG_KPROBES|CONFIG_OVERLAY_FS' out/.config || true
+
+      - name: Setup ARM64 toolchain
+        run: |
+          git clone --depth=1 \
+            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
+            toolchain
+
+      - name: Build kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-
+          make O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE=$CROSS_COMPILE \
+            -j$(nproc)
+
+      - name: Collect kernel
+        run: |
+          mkdir -p artifacts
+
+          cp out/arch/arm64/boot/Image artifacts/ 2>/dev/null || true
+          cp out/arch/arm64/boot/Image.gz artifacts/ 2>/dev/null || true
+          cp out/arch/arm64/boot/Image.gz-dtb artifacts/ 2>/dev/null || true
+
+          find out/arch/arm64/boot/dts -name '*.dtb' \
+            -exec cp {} artifacts/ \; 2>/dev/null || true
+
+          cp out/.config artifacts/kernel.config
+
+          ls -lah artifacts
+
+      - name: Upload kernel
+        uses: actions/upload-artifact@v4
+        with:
+          name: A032F-KSU-3.3.0-30
+          path: artifacts/
