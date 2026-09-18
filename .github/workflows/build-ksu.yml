@@ -43,11 +43,9 @@ jobs:
           
           export DEFCONFIG="a3core_eur_open_defconfig"
           
-          # FIX: Mematikan paksa pengecekan YAML di DTC agar Clang tidak error saat linking
-          sed -i 's/yaml-0.1/yaml-DISABLE/g' scripts/dtc/Makefile
-          
-          make O=out ARCH=arm64 $DEFCONFIG
-          make -j$(nproc) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-
+          # Menambahkan HOSTCC, HOSTCXX, dan HOSTLD agar alat bantu kompilasi menggunakan bawaan Ubuntu
+          make O=out ARCH=arm64 $DEFCONFIG HOSTCC=gcc HOSTCXX=g++ HOSTLD=ld
+          make -j$(nproc) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCC=gcc HOSTCXX=g++ HOSTLD=ld
 
       - name: Upload Hasil Kernel
         uses: actions/upload-artifact@v4
