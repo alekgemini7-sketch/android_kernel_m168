@@ -43,9 +43,9 @@ jobs:
           
           export DEFCONFIG="a3core_eur_open_defconfig"
           
-          # Menambahkan HOSTCC, HOSTCXX, dan HOSTLD agar alat bantu kompilasi menggunakan bawaan Ubuntu
-          make O=out ARCH=arm64 $DEFCONFIG HOSTCC=gcc HOSTCXX=g++ HOSTLD=ld
-          make -j$(nproc) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCC=gcc HOSTCXX=g++ HOSTLD=ld
+          # FIX: Menggunakan ALAMAT LENGKAP (Absolute Path) untuk memaksa penggunaan Host Tools bawaan Ubuntu
+          make O=out ARCH=arm64 $DEFCONFIG HOSTCC=/usr/bin/gcc HOSTCXX=/usr/bin/g++ HOSTLD=/usr/bin/ld
+          make -j$(nproc) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCC=/usr/bin/gcc HOSTCXX=/usr/bin/g++ HOSTLD=/usr/bin/ld
 
       - name: Upload Hasil Kernel
         uses: actions/upload-artifact@v4
