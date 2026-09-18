@@ -1,159 +1,52 @@
-name: Build A03 Core KSU 3.3.0-30
+name: Build Kernel m168 with KernelSU v3.3.0
 
 on:
   workflow_dispatch:
 
 jobs:
-  build:
+  build-kernel:
     runs-on: ubuntu-22.04
-
     steps:
-      - name: Checkout kernel
+      - name: Checkout Source Code
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      - name: Install dependencies
-        shell: bash
+      - name: Setup Toolchain & Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            bc \
-            bison \
-            build-essential \
-            flex \
-            git \
-            libssl-dev \
-            libelf-dev \
-            libyaml-dev \
-            lz4 \
-            cpio \
-            python3 \
-            rsync \
-            unzip \
-            zip \
-            clang \
-            llvm \
-            lld
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libncurses5 libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev
+          # Mengunduh compiler Proton Clang
+          git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
 
-      - name: Clone KernelSU v3.3.0-30
-        shell: bash
+      - name: Pasang KernelSU v3.3.0
         run: |
-          git clone \
-            --depth=1 \
-            --branch v3.3.0-30 \
-            https://github.com/backslashxx/KernelSU.git \
-            /tmp/KernelSU
+          # Hapus versi lama jika ada
+          rm -rf drivers/kernelsu
+          
+          # Download KernelSU dari repo backslashxx
+          git clone --depth=1 --branch v3.3.0-30 https://github.com/backslashxx/KernelSU.git drivers/kernelsu
+          
+          # Registrasi ke Makefile dan Kconfig
+          grep -q "kernelsu" drivers/Makefile || echo "obj-y += kernelsu/" >> drivers/Makefile
+          grep -q "kernelsu" drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
-          echo "KernelSU version:"
-          git -C /tmp/KernelSU describe --tags --always
-
-      - name: Replace KernelSU source
-        shell: bash
-        run: |
-          rm -rf KernelSU
-          cp -a /tmp/KernelSU KernelSU
-
-          echo "KernelSU directory:"
-          ls -lah KernelSU
-
-      - name: Setup LLVM
-        shell: bash
-        run: |
-          clang --version
-          ld.lld --version
-          llvm-ar --version
-
-      - name: Prepare build directory
-        shell: bash
-        run: |
-          rm -rf out
-          mkdir -p out
-
-      - name: Configure A03 Core
-        shell: bash
-        run: |
-          make \
-            O=out \
-            ARCH=arm64 \
-            a3core_eur_open_defconfig
-
-      - name: Check KernelSU configuration
-        shell: bash
-        run: |
-          echo "=== KernelSU config ==="
-          grep -E \
-            'CONFIG_KSU|CONFIG_KPROBES|CONFIG_OVERLAY_FS' \
-            out/.config || true
-
-      - name: Build kernel
-        shell: bash
+      - name: Build Kernel
         run: |
           export ARCH=arm64
           export SUBARCH=arm64
+          export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
+          export KBUILD_COMPILER_STRING="$(clang --version | head -n 1)"
+          
+          # PENTING: Ubah "m168_defconfig" di bawah ini sesuai dengan nama file defconfig kernel Anda 
+          # (Biasanya ada di folder arch/arm64/configs/)
+          export DEFCONFIG="a3core_eur_open_defconfig"
+          
+          make O=out ARCH=arm64 $DEFCONFIG
+          make -j$(nproc) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi-
 
-          echo "=== Compiler ==="
-          clang --version
-
-          echo "=== Building kernel ==="
-
-          make \
-            O=out \
-            ARCH=arm64 \
-            CC=clang \
-            LLVM=1 \
-            LLVM_IAS=1 \
-            -j"$(nproc)"
-
-      - name: Verify kernel
-        shell: bash
-        run: |
-          echo "=== Kernel output ==="
-
-          ls -lah out/arch/arm64/boot/
-
-          if [ -f out/arch/arm64/boot/Image ]; then
-            echo "Image found!"
-            file out/arch/arm64/boot/Image
-          else
-            echo "ERROR: Image not found"
-            exit 1
-          fi
-
-      - name: Collect kernel
-        shell: bash
-        run: |
-          mkdir -p artifacts
-
-          cp out/arch/arm64/boot/Image \
-            artifacts/Image
-
-          if [ -f out/arch/arm64/boot/Image.gz ]; then
-            cp out/arch/arm64/boot/Image.gz \
-              artifacts/Image.gz
-          fi
-
-          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
-            cp out/arch/arm64/boot/Image.gz-dtb \
-              artifacts/Image.gz-dtb
-          fi
-
-          if [ -d out/arch/arm64/boot/dts ]; then
-            find out/arch/arm64/boot/dts \
-              -type f \
-              -name '*.dtb' \
-              -exec cp {} artifacts/ \;
-          fi
-
-          cp out/.config \
-            artifacts/kernel.config
-
-          echo "=== Final artifacts ==="
-          ls -lah artifacts
-
-      - name: Upload kernel artifact
+      - name: Upload Hasil Kernel
         uses: actions/upload-artifact@v4
         with:
-          name: A032F-KSU-3.3.0-30
-          path: artifacts/
-          if-no-files-found: error
+          name: Kernel-m168-KSU-v3.3.0
+          path: |
+            out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/Image
