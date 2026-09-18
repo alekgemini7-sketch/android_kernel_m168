@@ -14,9 +14,10 @@ jobs:
           submodules: recursive
 
       - name: Install dependencies
+        shell: bash
         run: |
-          sudo apt update
-          sudo apt install -y \
+          sudo apt-get update
+          sudo apt-get install -y \
             bc \
             bison \
             build-essential \
@@ -32,73 +33,102 @@ jobs:
             zip
 
       - name: Clone KernelSU v3.3.0-30
+        shell: bash
         run: |
-          git clone --depth=1 \
+          git clone \
+            --depth=1 \
             --branch v3.3.0-30 \
             https://github.com/backslashxx/KernelSU.git \
             /tmp/KernelSU
 
       - name: Replace KernelSU source
+        shell: bash
         run: |
           rm -rf KernelSU
           cp -a /tmp/KernelSU KernelSU
 
       - name: Check KernelSU
+        shell: bash
         run: |
+          echo "KernelSU:"
           git -C KernelSU describe --tags --always || true
           find KernelSU -maxdepth 2 -type f | head -50
 
-      - name: Prepare config
+      - name: Setup ARM64 GCC 4.9
+        shell: bash
+        run: |
+          git clone \
+            --depth=1 \
+            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
+            "$GITHUB_WORKSPACE/toolchain"
+
+          echo "Toolchain:"
+          ls -lah "$GITHUB_WORKSPACE/toolchain/bin"
+
+          test -x "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-gcc"
+          test -x "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-ld"
+
+      - name: Configure kernel
+        shell: bash
         run: |
           mkdir -p out
-          make O=out ARCH=arm64 a3core_eur_open_defconfig
 
-      - name: Show KSU config
+          make \
+            O=out \
+            ARCH=arm64 \
+            a3core_eur_open_defconfig
+
+      - name: Show configuration
+        shell: bash
         run: |
-          grep -E 'CONFIG_KSU|CONFIG_KPROBES|CONFIG_OVERLAY_FS' out/.config || true
-
-      - name: Setup ARM64 GCC 4.9
-  run: |
-    git clone --depth=1 \
-      https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
-      "$GITHUB_WORKSPACE/toolchain"
-
-    echo "Toolchain:"
-    ls -lah "$GITHUB_WORKSPACE/toolchain/bin"
-
-    test -x "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-gcc"
-    test -x "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-ld"
+          grep -E 'CONFIG_KSU|CONFIG_KPROBES|CONFIG_OVERLAY_FS' \
+            out/.config || true
 
       - name: Build kernel
-  run: |
-    export ARCH=arm64
-    export SUBARCH=arm64
-    export CROSS_COMPILE="$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-"
+        shell: bash
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export CROSS_COMPILE="$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-"
 
-    echo "GCC:"
-    "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-gcc" --version
+          echo "Compiler:"
+          "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-gcc" --version
 
-    echo "LD:"
-    "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-ld" --version
+          echo "Building kernel..."
 
-    make O=out \
-      ARCH=arm64 \
-      CROSS_COMPILE="$CROSS_COMPILE" \
-      -j$(nproc)
+          make \
+            O=out \
+            ARCH=arm64 \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            -j"$(nproc)"
 
       - name: Collect kernel
+        shell: bash
         run: |
           mkdir -p artifacts
 
-          cp out/arch/arm64/boot/Image artifacts/ 2>/dev/null || true
-          cp out/arch/arm64/boot/Image.gz artifacts/ 2>/dev/null || true
-          cp out/arch/arm64/boot/Image.gz-dtb artifacts/ 2>/dev/null || true
+          if [ -f out/arch/arm64/boot/Image ]; then
+            cp out/arch/arm64/boot/Image artifacts/
+          fi
 
-          find out/arch/arm64/boot/dts -name '*.dtb' \
-            -exec cp {} artifacts/ \; 2>/dev/null || true
+          if [ -f out/arch/arm64/boot/Image.gz ]; then
+            cp out/arch/arm64/boot/Image.gz artifacts/
+          fi
+
+          if [ -f out/arch/arm64/boot/Image.gz-dtb ]; then
+            cp out/arch/arm64/boot/Image.gz-dtb artifacts/
+          fi
+
+          if [ -d out/arch/arm64/boot/dts ]; then
+            find out/arch/arm64/boot/dts \
+              -type f \
+              -name '*.dtb' \
+              -exec cp {} artifacts/ \;
+          fi
 
           cp out/.config artifacts/kernel.config
 
+          echo "=== ARTIFACTS ==="
           ls -lah artifacts
 
       - name: Upload kernel
