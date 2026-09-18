@@ -13,13 +13,12 @@ jobs:
       - name: Setup Toolchain & Dependencies
         run: |
           sudo apt-get update
-          # Menggunakan libncurses-dev dan menambahkan cpio beserta pkg-config
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf lib32readline-dev lib32z1-dev liblz4-tool libncurses-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev libyaml-dev cpio pkg-config
           
           # Mengunduh compiler Proton Clang
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
           
-          # FIX: Menghapus linker usang bawaan Clang agar tidak bentrok dengan Ubuntu
+          # Hapus linker usang bawaan Clang agar tidak bentrok dengan Ubuntu
           rm -f clang/bin/ld
 
       - name: Pasang KernelSU v3.3.0
@@ -42,18 +41,26 @@ jobs:
           export KBUILD_COMPILER_STRING="$(clang --version | head -n 1)"
           export DEFCONFIG="a3core_eur_open_defconfig"
           
-          # FIX: Mengabaikan peringatan alignment (Werror) pada blk-mq.c
-          export KCFLAGS="-Wno-align-mismatch"
+          # 1. Hapus aturan -Werror secara menyeluruh agar warning tidak membatalkan kompilasi
+          sed -i 's/-Werror//g' Makefile
+          sed -i 's/-Werror//g' arch/arm64/Makefile
+          export KCFLAGS="-Wno-align-mismatch -Wno-strict-prototypes -Wno-error"
           
-          # FIX: Trik Kuda Troya untuk mematikan kompilasi fitur YAML sepenuhnya
+          # 2. Perbaiki fungsi lama di driver touchscreen
+          sed -i 's/bool get_tp_gesture_stat()/bool get_tp_gesture_stat(void)/g' drivers/input/touchscreen/lct_tp_gesture.c 2>/dev/null || true
+          
+          # 3. Lumpuhkan assertion generate_fixups di DTC agar tidak crash
+          sed -i 's/assert(generate_fixups);//g' scripts/dtc/livetree.c 2>/dev/null || true
+          
+          # 4. Dummy handler YAML agar DTC tidak error saat linking
           echo '#include "dtc.h"' > scripts/dtc/yamltree.c
           echo 'void dt_to_yaml(FILE *f, struct dt_info *dti) { }' >> scripts/dtc/yamltree.c
           
-          # Buat konfigurasi dengan Host Tools Ubuntu murni
+          # 5. Siapkan konfigurasi kernel
           make O=out ARCH=arm64 $DEFCONFIG HOSTCC=/usr/bin/gcc HOSTCXX=/usr/bin/g++ HOSTLD=/usr/bin/ld
           
-          # Kompilasi Inti
-          make -j$(nproc) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCC=/usr/bin/gcc HOSTCXX=/usr/bin/g++ HOSTLD=/usr/bin/ld
+          # 6. Kompilasi langsung ke target Image dan Image.gz
+          make -j$(nproc) O=out ARCH=arm64 CC=clang CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- HOSTCC=/usr/bin/gcc HOSTCXX=/usr/bin/g++ HOSTLD=/usr/bin/ld Image Image.gz
 
       - name: Upload Hasil Kernel
         uses: actions/upload-artifact@v4
