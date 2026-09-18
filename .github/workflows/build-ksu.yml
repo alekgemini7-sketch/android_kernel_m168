@@ -17,21 +17,21 @@ jobs:
           # Mengunduh compiler Proton Clang
           git clone --depth=1 https://github.com/kdrag0n/proton-clang.git clang
 
-     - name: Pasang KernelSU v3.3.0
-            run: |
-              # Hapus versi lama jika ada
-              rm -rf drivers/kernelsu
-              rm -rf KernelSU
-              
-              # Download KernelSU ke folder root dengan nama 'KernelSU'
-              git clone --depth=1 --branch v3.3.0-30 https://github.com/backslashxx/KernelSU.git KernelSU
-              
-              # Buat shortcut (symlink) folder kernel-nya ke drivers/kernelsu
-              ln -sf ../KernelSU/kernel drivers/kernelsu
-              
-              # Registrasi ke Makefile dan Kconfig
-              grep -q "kernelsu" drivers/Makefile || echo "obj-y += kernelsu/" >> drivers/Makefile
-              grep -q "kernelsu" drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+      - name: Pasang KernelSU v3.3.0
+        run: |
+          # Hapus versi lama jika ada
+          rm -rf drivers/kernelsu
+          rm -rf KernelSU
+          
+          # Download KernelSU ke folder root dengan nama 'KernelSU'
+          git clone --depth=1 --branch v3.3.0-30 https://github.com/backslashxx/KernelSU.git KernelSU
+          
+          # Buat shortcut (symlink) folder kernel-nya ke drivers/kernelsu
+          ln -sf ../KernelSU/kernel drivers/kernelsu
+          
+          # Registrasi ke Makefile dan Kconfig
+          grep -q "kernelsu" drivers/Makefile || echo "obj-y += kernelsu/" >> drivers/Makefile
+          grep -q "kernelsu" drivers/Kconfig || echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
 
       - name: Build Kernel
         run: |
@@ -40,8 +40,7 @@ jobs:
           export PATH="$GITHUB_WORKSPACE/clang/bin:$PATH"
           export KBUILD_COMPILER_STRING="$(clang --version | head -n 1)"
           
-          # PENTING: Ubah "m168_defconfig" di bawah ini sesuai dengan nama file defconfig kernel Anda 
-          # (Biasanya ada di folder arch/arm64/configs/)
+          # Menggunakan defconfig dari log error
           export DEFCONFIG="a3core_eur_open_defconfig"
           
           make O=out ARCH=arm64 $DEFCONFIG
