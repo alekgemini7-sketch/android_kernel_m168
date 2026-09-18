@@ -57,21 +57,34 @@ jobs:
         run: |
           grep -E 'CONFIG_KSU|CONFIG_KPROBES|CONFIG_OVERLAY_FS' out/.config || true
 
-      - name: Setup ARM64 toolchain
-        run: |
-          git clone --depth=1 \
-            https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
-            toolchain
+      - name: Setup ARM64 GCC 4.9
+  run: |
+    git clone --depth=1 \
+      https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 \
+      "$GITHUB_WORKSPACE/toolchain"
+
+    echo "Toolchain:"
+    ls -lah "$GITHUB_WORKSPACE/toolchain/bin"
+
+    test -x "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-gcc"
+    test -x "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-ld"
 
       - name: Build kernel
-        run: |
-          export ARCH=arm64
-          export SUBARCH=arm64
-          export CROSS_COMPILE=$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-
-          make O=out \
-            ARCH=arm64 \
-            CROSS_COMPILE=$CROSS_COMPILE \
-            -j$(nproc)
+  run: |
+    export ARCH=arm64
+    export SUBARCH=arm64
+    export CROSS_COMPILE="$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-"
+
+    echo "GCC:"
+    "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-gcc" --version
+
+    echo "LD:"
+    "$GITHUB_WORKSPACE/toolchain/bin/aarch64-linux-android-ld" --version
+
+    make O=out \
+      ARCH=arm64 \
+      CROSS_COMPILE="$CROSS_COMPILE" \
+      -j$(nproc)
 
       - name: Collect kernel
         run: |
